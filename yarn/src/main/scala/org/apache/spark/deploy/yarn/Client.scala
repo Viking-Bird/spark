@@ -294,8 +294,10 @@ private[spark] class Client(
 
   /**
    * Fail fast if we have requested more resources per container than is available in the cluster.
+    * 如果container申请的内存超过集群中单个container最大可申请内存限制，则抛出异常
    */
   private def verifyClusterResources(newAppResponse: GetNewApplicationResponse): Unit = {
+    // 获取单个container可申请的最大内存资源
     val maxMem = newAppResponse.getMaximumResourceCapability().getMemory()
     logInfo("Verifying our application has not requested more than the maximum " +
       s"memory capability of the cluster ($maxMem MB per container)")

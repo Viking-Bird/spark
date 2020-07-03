@@ -105,6 +105,7 @@ private[history] class FsHistoryProvider(conf: SparkConf, clock: Clock)
   // Used by check event thread and clean log thread.
   // Scheduled thread pool size must be one, otherwise it will have concurrent issues about fs
   // and applications between check task and clean task.
+  // 检查event线程事件和清除日志线程池，线程池大小必须是1，否则在执行检查任务和清理任务时，相关的fs和applications会有并发问题
   private val pool = Executors.newScheduledThreadPool(1, new ThreadFactoryBuilder()
     .setNameFormat("spark-history-task-%d").setDaemon(true).build())
 
@@ -149,6 +150,7 @@ private[history] class FsHistoryProvider(conf: SparkConf, clock: Clock)
   val initThread = initialize()
 
   private[history] def initialize(): Thread = {
+    // 非安全模式下检查任务日志文件
     if (!isFsInSafeMode()) {
       startPolling()
       null
@@ -193,6 +195,7 @@ private[history] class FsHistoryProvider(conf: SparkConf, clock: Clock)
   private def startPolling(): Unit = {
     // Validate the log directory.
     val path = new Path(logDir)
+    // 检查目录是否存在
     if (!fs.exists(path)) {
       var msg = s"Log directory specified does not exist: $logDir."
       if (logDir == DEFAULT_LOG_DIR) {
@@ -200,12 +203,14 @@ private[history] class FsHistoryProvider(conf: SparkConf, clock: Clock)
       }
       throw new IllegalArgumentException(msg)
     }
+    // 检查是不是一个目录
     if (!fs.getFileStatus(path).isDirectory) {
       throw new IllegalArgumentException(
         "Logging directory specified is not a directory: %s".format(logDir))
     }
 
     // Disable the background thread during tests.
+    // 非测试模式下，启动日志检查和清理线程
     if (!conf.contains("spark.testing")) {
       // A task that periodically checks for event log updates on disk.
       logDebug(s"Scheduling update thread every $UPDATE_INTERVAL_S seconds")
