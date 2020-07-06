@@ -53,6 +53,11 @@ class SparkSQLExample2 {
     })
   }
 
+  @Test
+  def test1: Unit ={
+
+  }
+
   @After
   def close: Unit = {
     this.spark.stop()

@@ -241,7 +241,7 @@ private[spark] class ApplicationMaster(
         delegationTokenRenewerOption.foreach(_.scheduleLoginFromKeytab())
       }
 
-      if (isClusterMode) {
+      if (isClusterMode) { // 集群模式走runDriver
         runDriver(securityMgr)
       } else {
         runExecutorLauncher(securityMgr)
@@ -350,6 +350,7 @@ private[spark] class ApplicationMaster(
       securityMgr,
       localResources)
 
+    // 分配资源
     allocator.allocateResources()
     reporterThread = launchReporterThread()
   }
@@ -393,7 +394,9 @@ private[spark] class ApplicationMaster(
         sc.getConf.get("spark.driver.host"),
         sc.getConf.get("spark.driver.port"),
         isClusterMode = true)
+      // 注册AM
       registerAM(rpcEnv, driverRef, sc.ui.map(_.appUIAddress).getOrElse(""), securityMgr)
+      // 表示Driver线程必须执行完，不执行完就不退出
       userClassThread.join()
     }
   }
@@ -647,6 +650,7 @@ private[spark] class ApplicationMaster(
     }
     userThread.setContextClassLoader(userClassLoader)
     userThread.setName("Driver")
+    // 启动Driver线程，执行用户类的main方法
     userThread.start()
     userThread
   }

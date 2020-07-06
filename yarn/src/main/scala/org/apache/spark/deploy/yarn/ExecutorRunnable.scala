@@ -64,6 +64,7 @@ private[yarn] class ExecutorRunnable(
 
   def run(): Unit = {
     logInfo("Starting Executor Container")
+    // 和NodeManager交互启动container
     nmClient = NMClient.createNMClient()
     nmClient.init(yarnConf)
     nmClient.start()

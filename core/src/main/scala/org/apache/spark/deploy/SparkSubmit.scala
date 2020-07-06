@@ -114,6 +114,7 @@ object SparkSubmit {
   // scalastyle:on println
 
   def main(args: Array[String]): Unit = {
+    // 解析命令行参数
     val appArgs = new SparkSubmitArguments(args)
     if (appArgs.verbose) {
       // scalastyle:off println

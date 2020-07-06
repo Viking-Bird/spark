@@ -93,6 +93,7 @@ private[deploy] class SparkSubmitArguments(args: Seq[String], env: Map[String, S
     defaultProperties
   }
 
+  // 解析参数
   // Set parameters from command line arguments
   try {
     parse(args.asJava)

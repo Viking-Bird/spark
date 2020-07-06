@@ -936,7 +936,7 @@ private[spark] class Client(
         Nil
       }
     val amClass =
-      if (isClusterMode) {
+      if (isClusterMode) { //集群模式加载org.apache.spark.deploy.yarn.ApplicationMaster类
         Utils.classForName("org.apache.spark.deploy.yarn.ApplicationMaster").getName
       } else {
         Utils.classForName("org.apache.spark.deploy.yarn.ExecutorLauncher").getName
