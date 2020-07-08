@@ -30,6 +30,7 @@ import org.apache.spark.internal.Logging
  *
  * Note: The event queue will grow indefinitely. So subclasses should make sure `onReceive` can
  * handle events in time to avoid the potential OOM.
+  * 注意：事件处理队列可能会无限增长，因此实现它的子类中的onReceive方法应该能确保事件被及时处理避免发生OOM问题
  */
 private[spark] abstract class EventLoop[E](name: String) extends Logging {
 
@@ -37,6 +38,9 @@ private[spark] abstract class EventLoop[E](name: String) extends Logging {
 
   private val stopped = new AtomicBoolean(false)
 
+  /**
+    * 事件处理线程
+    */
   private val eventThread = new Thread(name) {
     setDaemon(true)
 
@@ -63,6 +67,9 @@ private[spark] abstract class EventLoop[E](name: String) extends Logging {
 
   }
 
+  /**
+    * 启动事件处理线程
+    */
   def start(): Unit = {
     if (stopped.get) {
       throw new IllegalStateException(name + " has already been stopped")

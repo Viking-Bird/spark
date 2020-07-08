@@ -135,7 +135,9 @@ class DAGScheduler(
 
   private[spark] val metricsSource: DAGSchedulerSource = new DAGSchedulerSource(this)
 
+  // 原子自增jobId生成器
   private[scheduler] val nextJobId = new AtomicInteger(0)
+  // 返回job总数
   private[scheduler] def numTotalJobs: Int = nextJobId.get()
   private val nextStageId = new AtomicInteger(0)
 
@@ -389,7 +391,7 @@ class DAGScheduler(
         // Kind of ugly: need to register RDDs with the cache here since
         // we can't do it in its constructor because # of partitions is unknown
         for (dep <- r.dependencies) {
-          dep match {
+          dep match { // 判断有没有shuffle依赖
             case shufDep: ShuffleDependency[_, _, _] =>
               parents += getShuffleMapStage(shufDep, firstJobId)
             case _ =>
@@ -570,6 +572,7 @@ class DAGScheduler(
       resultHandler: (Int, U) => Unit,
       properties: Properties): JobWaiter[U] = {
     // Check to make sure we are not launching a task on a partition that does not exist.
+    // 判断任务处理的分区是否存在，如果不存在，则抛出异常
     val maxPartitions = rdd.partitions.length
     partitions.find(p => p >= maxPartitions || p < 0).foreach { p =>
       throw new IllegalArgumentException(
@@ -577,15 +580,18 @@ class DAGScheduler(
           "Total number of partitions: " + maxPartitions)
     }
 
+    // 如果作业只包含0个任务，则创建0个任务的JobWaiter，并立即返回
     val jobId = nextJobId.getAndIncrement()
     if (partitions.size == 0) {
       // Return immediately if the job is running 0 tasks
       return new JobWaiter[U](this, jobId, 0, resultHandler)
     }
 
+    // 创建JobWaiter对象，等待作业运行完毕，使用内部类提交作业
     assert(partitions.size > 0)
     val func2 = func.asInstanceOf[(TaskContext, Iterator[_]) => _]
     val waiter = new JobWaiter(this, jobId, partitions.size, resultHandler)
+    // 往事件队列里放入一个JobSubmitted提交事件，这里的rdd是最后提交的rdd行动算子对象
     eventProcessLoop.post(JobSubmitted(
       jobId, rdd, func2, partitions.toArray, callSite, waiter,
       SerializationUtils.clone(properties)))
@@ -614,6 +620,7 @@ class DAGScheduler(
       resultHandler: (Int, U) => Unit,
       properties: Properties): Unit = {
     val start = System.nanoTime
+    // 提交作业
     val waiter = submitJob(rdd, func, partitions, callSite, resultHandler, properties)
     // Note: Do not call Await.ready(future) because that calls `scala.concurrent.blocking`,
     // which causes concurrent SQL executions to fail if a fork-join pool is used. Note that
@@ -846,6 +853,7 @@ class DAGScheduler(
     try {
       // New stage creation may throw an exception if, for example, jobs are run on a
       // HadoopRDD whose underlying HDFS files have been deleted.
+      // 根据最后一个RDD回溯，获取最后一个调度阶段finalStage
       finalStage = newResultStage(finalRDD, func, partitions, jobId, callSite)
     } catch {
       case e: Exception =>
@@ -854,6 +862,7 @@ class DAGScheduler(
         return
     }
 
+    // 根据最后一个调度阶段finalStage生成作业
     val job = new ActiveJob(jobId, finalStage, callSite, listener, properties)
     clearCacheLocs()
     logInfo("Got job %s (%s) with %d output partitions".format(
@@ -870,6 +879,8 @@ class DAGScheduler(
     val stageInfos = stageIds.flatMap(id => stageIdToStage.get(id).map(_.latestInfo))
     listenerBus.post(
       SparkListenerJobStart(job.jobId, jobSubmissionTime, stageInfos, properties))
+
+    // 提交执行
     submitStage(finalStage)
 
     submitWaitingStages()
@@ -1599,21 +1610,30 @@ class DAGScheduler(
     listenerBus.post(SparkListenerJobEnd(job.jobId, clock.getTimeMillis(), JobSucceeded))
   }
 
+  /**
+    * 关闭事件处理线程、任务调度线程
+    */
   def stop() {
     messageScheduler.shutdownNow()
     eventProcessLoop.stop()
     taskScheduler.stop()
   }
 
+  // 启动事件处理线程
   eventProcessLoop.start()
 }
 
+/**
+  * 事件处理类
+  * @param dagScheduler
+  */
 private[scheduler] class DAGSchedulerEventProcessLoop(dagScheduler: DAGScheduler)
   extends EventLoop[DAGSchedulerEvent]("dag-scheduler-event-loop") with Logging {
 
   private[this] val timer = dagScheduler.metricsSource.messageProcessingTimer
 
   /**
+    * 处理接收到的事件
    * The main event loop of the DAG scheduler.
    */
   override def onReceive(event: DAGSchedulerEvent): Unit = {
@@ -1625,6 +1645,10 @@ private[scheduler] class DAGSchedulerEventProcessLoop(dagScheduler: DAGScheduler
     }
   }
 
+  /**
+    * 根据模式匹配来执行不同的操作
+    * @param event
+    */
   private def doOnReceive(event: DAGSchedulerEvent): Unit = event match {
     case JobSubmitted(jobId, rdd, func, partitions, callSite, listener, properties) =>
       dagScheduler.handleJobSubmitted(jobId, rdd, func, partitions, callSite, listener, properties)

@@ -26,6 +26,8 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.util.{AccumulatorV2, CallSite}
 
 /**
+  *
+  * 保存DAGScheduler事件类型。DAGScheduler基于事件队列架构使用单线程处理线程发送的事件并执行操作。这极大地简化了同步
  * Types of events that can be handled by the DAGScheduler. The DAGScheduler uses an event queue
  * architecture where any thread can post an event (e.g. a task finishing or a new job being
  * submitted) but there is a single "logic" thread that reads these events and takes decisions.
