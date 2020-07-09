@@ -232,16 +232,20 @@ private[spark] class Executor(
     }
 
     override def run(): Unit = {
+      // 生成内存管理TaskMemoryManager实例，用于任务运行期间内部管理
       val taskMemoryManager = new TaskMemoryManager(env.memoryManager, taskId)
       val deserializeStartTime = System.currentTimeMillis()
       Thread.currentThread.setContextClassLoader(replClassLoader)
       val ser = env.closureSerializer.newInstance()
       logInfo(s"Running $taskName (TID $taskId)")
+
+      // 向Driver终端点发送任务运行开始消息
       execBackend.statusUpdate(taskId, TaskState.RUNNING, EMPTY_BYTE_BUFFER)
       var taskStart: Long = 0
       startGCTime = computeTotalGcTime()
 
       try {
+        // 对任务运行时所需要的文件、Jar包、代码等反序列化
         val (taskFiles, taskJars, taskProps, taskBytes) =
           Task.deserializeWithDependencies(serializedTask)
 
@@ -256,6 +260,7 @@ private[spark] class Executor(
 
         // If this task has been killed before we deserialized it, let's quit now. Otherwise,
         // continue executing the task.
+        // 任务在反序列化之前被杀死，则抛出异常并退出
         if (killed) {
           // Throw an exception rather than returning, because returning within a try{} block
           // causes a NonLocalReturnControl exception to be thrown. The NonLocalReturnControl
@@ -270,6 +275,8 @@ private[spark] class Executor(
         // Run the actual task and measure its runtime.
         taskStart = System.currentTimeMillis()
         var threwException = true
+
+        // 调用Task的runTask方法，由于Task本身是一个抽象类，具体的runTask方法是由它的两个子类ShuffleMapTask和ResultTask来实现的
         val value = try {
           val res = task.run(
             taskAttemptId = taskId,
@@ -308,6 +315,7 @@ private[spark] class Executor(
           throw new TaskKilledException
         }
 
+        // 对生成的结果进行序列化，并把结果放到DirectTaskResult中
         val resultSer = env.serializer.newInstance()
         val beforeSerialization = System.currentTimeMillis()
         val valueBytes = resultSer.serialize(value)
@@ -331,12 +339,14 @@ private[spark] class Executor(
 
         // directSend = sending directly back to the driver
         val serializedResult: ByteBuffer = {
+          // 生成结果序列化结果大于最大值（默认为1GB）直接丢弃
           if (maxResultSize > 0 && resultSize > maxResultSize) {
             logWarning(s"Finished $taskName (TID $taskId). Result is larger than maxResultSize " +
               s"(${Utils.bytesToString(resultSize)} > ${Utils.bytesToString(maxResultSize)}), " +
               s"dropping it.")
             ser.serialize(new IndirectTaskResult[Any](TaskResultBlockId(taskId), resultSize))
           } else if (resultSize > maxDirectResultSize) {
+            // 生成结果序列化结果在[1GB，128MB-200KB]之间，存放到BlockManager中，然后把该编号通过Netty发送给Driver终端点
             val blockId = TaskResultBlockId(taskId)
             env.blockManager.putBytes(
               blockId,
@@ -346,11 +356,12 @@ private[spark] class Executor(
               s"Finished $taskName (TID $taskId). $resultSize bytes result sent via BlockManager)")
             ser.serialize(new IndirectTaskResult[Any](blockId, resultSize))
           } else {
+            // 通过Netty直接发送给Driver终端点
             logInfo(s"Finished $taskName (TID $taskId). $resultSize bytes result sent to driver")
             serializedDirectResult
           }
         }
-
+        // 向Driver终端点发送任务执行完毕信息
         execBackend.statusUpdate(taskId, TaskState.FINISHED, serializedResult)
 
       } catch {

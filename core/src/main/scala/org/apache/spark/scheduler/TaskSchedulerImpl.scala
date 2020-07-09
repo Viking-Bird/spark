@@ -166,6 +166,7 @@ private[spark] class TaskSchedulerImpl(
     val tasks = taskSet.tasks
     logInfo("Adding task set " + taskSet.id + " with " + tasks.length + " tasks")
     this.synchronized {
+      // 创建任务集管理器，管理任务集的生命周期
       val manager = createTaskSetManager(taskSet, maxTaskFailures)
       val stage = taskSet.stageId
       val stageTaskSets =
@@ -178,6 +179,7 @@ private[spark] class TaskSchedulerImpl(
         throw new IllegalStateException(s"more than one active taskSet for stage $stage:" +
           s" ${stageTaskSets.toSeq.map{_._2.taskSet.id}.mkString(",")}")
       }
+      // 将该任务集的管理器加入到系统调度池中，由系统统一调配，该调度器属于应用级别
       schedulableBuilder.addTaskSetManager(manager, manager.taskSet.properties)
 
       if (!isLocal && !hasReceivedTask) {
@@ -195,6 +197,7 @@ private[spark] class TaskSchedulerImpl(
       }
       hasReceivedTask = true
     }
+    // 调用调度器后台进程的SparkDeploySchedulerBacked的reviveOffers方法分配资源并运行
     backend.reviveOffers()
   }
 
@@ -285,6 +288,7 @@ private[spark] class TaskSchedulerImpl(
   def resourceOffers(offers: Seq[WorkerOffer]): Seq[Seq[TaskDescription]] = synchronized {
     // Mark each slave as alive and remember its hostname
     // Also track if new executor is added
+    // 对传入的可用Executor列表进行处理，记录其信息，如有新的Executor加入，则进行标记
     var newExecAvail = false
     for (o <- offers) {
       executorIdToHost(o.executorId) = o.host
@@ -300,11 +304,16 @@ private[spark] class TaskSchedulerImpl(
     }
 
     // Randomly shuffle offers to avoid always placing tasks on the same set of workers.
+    // 为任务随机分配Executor，避免将任务集中分配到Worker上
     val shuffledOffers = Random.shuffle(offers)
     // Build a list of tasks to assign to each worker.
+    // 用于存储分配好资源的任务
     val tasks = shuffledOffers.map(o => new ArrayBuffer[TaskDescription](o.cores))
     val availableCpus = shuffledOffers.map(o => o.cores).toArray
+
+    // 获取按照调度策略排序好的TaskSetManager
     val sortedTaskSets = rootPool.getSortedTaskSetQueue
+    // 如果有新的Executor加入，则需要重新计算数据本地性
     for (taskSet <- sortedTaskSets) {
       logDebug("parentName: %s, name: %s, runningTasks: %s".format(
         taskSet.parent.name, taskSet.name, taskSet.runningTasks))

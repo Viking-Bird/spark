@@ -68,6 +68,7 @@ private[spark] class ShuffleMapTask(
     // Deserialize the RDD using the broadcast variable.
     val deserializeStartTime = System.currentTimeMillis()
     val ser = SparkEnv.get.closureSerializer.newInstance()
+    // 反序列化获取RDD和RDD的依赖
     val (rdd, dep) = ser.deserialize[(RDD[_], ShuffleDependency[_, _, _])](
       ByteBuffer.wrap(taskBinary.value), Thread.currentThread.getContextClassLoader)
     _executorDeserializeTime = System.currentTimeMillis() - deserializeStartTime
@@ -76,7 +77,10 @@ private[spark] class ShuffleMapTask(
     try {
       val manager = SparkEnv.get.shuffleManager
       writer = manager.getWriter[Any, Any](dep.shuffleHandle, partitionId, context)
+      // 首先调用rdd.iterator，如果该RDD已经Cache或者CheckPoint，那么直接读取结果
+      // 否则计算，计算结果保存在本地系统的BlockManager中
       writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
+      // 关闭writer，返回计算结果，返回包含了数据的location和size等元数据信息的MapStatus信息
       writer.stop(success = true).get
     } catch {
       case e: Exception =>

@@ -213,10 +213,12 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
     // Make fake resource offers on all executors
     private def makeOffers() {
       // Filter out executors under killing
+      // 获取集群中可用的Executor列表
       val activeExecutors = executorDataMap.filterKeys(executorIsAlive)
       val workOffers = activeExecutors.map { case (id, executorData) =>
         new WorkerOffer(id, executorData.executorHost, executorData.freeCores)
       }.toSeq
+      // 对任务集的任务分配运行资源，并把这些任务提交运行
       launchTasks(scheduler.resourceOffers(workOffers))
     }
 
