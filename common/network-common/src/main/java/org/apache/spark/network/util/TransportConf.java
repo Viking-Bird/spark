@@ -20,6 +20,7 @@ package org.apache.spark.network.util;
 import com.google.common.primitives.Ints;
 
 /**
+ * 保存传输配置
  * A central location that tracks all the settings we expose to users.
  */
 public class TransportConf {

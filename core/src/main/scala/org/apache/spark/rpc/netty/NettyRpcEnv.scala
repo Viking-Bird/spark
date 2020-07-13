@@ -46,15 +46,18 @@ private[netty] class NettyRpcEnv(
     host: String,
     securityManager: SecurityManager) extends RpcEnv(conf) with Logging {
 
+  // 获取传输配置
   private[netty] val transportConf = SparkTransportConf.fromSparkConf(
     conf.clone.set("spark.rpc.io.numConnectionsPerPeer", "1"),
     "rpc",
     conf.getInt("spark.rpc.io.threads", 0))
 
+  // 消息分发器，负责将消息发送给对应的Rpc Server（因为一个NettyRpcEnv可以运行多个Rpc Server）
   private val dispatcher: Dispatcher = new Dispatcher(this)
 
   private val streamManager = new NettyStreamManager(this)
 
+  // 初始化TransportContext，传递了NettyRpcHandler，作为netty server的回调
   private val transportContext = new TransportContext(transportConf,
     new NettyRpcHandler(dispatcher, this, streamManager))
 
@@ -93,6 +96,7 @@ private[netty] class NettyRpcEnv(
   private val stopped = new AtomicBoolean(false)
 
   /**
+    * 表示Outbox集合。每个Outbox对应着一个server的地址( 主机地址， 端口号)
    * A map for [[RpcAddress]] and [[Outbox]]. When we are connecting to a remote [[RpcAddress]],
    * we just put messages to its [[Outbox]] to implement a non-blocking `send` method.
    */
@@ -115,7 +119,9 @@ private[netty] class NettyRpcEnv(
       } else {
         java.util.Collections.emptyList()
       }
+    // 调用transportContext实例TransportServer
     server = transportContext.createServer(host, port, bootstraps)
+    // 向分发器注册自身服务，这样分发器才能根据名称找到服务
     dispatcher.registerRpcEndpoint(
       RpcEndpointVerifier.NAME, new RpcEndpointVerifier(this, dispatcher))
   }
@@ -148,16 +154,25 @@ private[netty] class NettyRpcEnv(
     dispatcher.stop(endpointRef)
   }
 
+  /**
+    * 通过Outbox发送消息
+    * @param receiver
+    * @param message
+    */
   private def postToOutbox(receiver: NettyRpcEndpointRef, message: OutboxMessage): Unit = {
+    // NettyRpcEndpointRef的client不为空
     if (receiver.client != null) {
       message.sendWith(receiver.client)
     } else {
       require(receiver.address != null,
         "Cannot send message to client endpoint with no listen address.")
+      // 根据server地址，寻找Outbox。如果没找到，则新建
       val targetOutbox = {
         val outbox = outboxes.get(receiver.address)
         if (outbox == null) {
+          // 新建Outbox
           val newOutbox = new Outbox(this, receiver.address)
+          // 这里调用了putIfAbsent，防止线程竞争
           val oldOutbox = outboxes.putIfAbsent(receiver.address, newOutbox)
           if (oldOutbox == null) {
             newOutbox
@@ -168,11 +183,13 @@ private[netty] class NettyRpcEnv(
           outbox
         }
       }
+      // stopped属性表示rpc服务是否已经关闭
       if (stopped.get) {
         // It's possible that we put `targetOutbox` after stopping. So we need to clean it.
         outboxes.remove(receiver.address)
         targetOutbox.stop()
       } else {
+        // 调用Outbox发送消息
         targetOutbox.send(message)
       }
     }
@@ -180,6 +197,8 @@ private[netty] class NettyRpcEnv(
 
   private[netty] def send(message: RequestMessage): Unit = {
     val remoteAddr = message.receiver.address
+    // 如果要请求的地址，是正在同一个NettyRpcEnv运行的server,
+    // 则直接通过dispatcher转发，而不需要建立socket连接
     if (remoteAddr == address) {
       // Message to a local RPC endpoint.
       try {
@@ -188,6 +207,8 @@ private[netty] class NettyRpcEnv(
         case e: RpcEnvStoppedException => logWarning(e.getMessage)
       }
     } else {
+      // 如果是远端server，则调用postToOutbox方法发送
+      // 这里序列化了消息，并生成OneWayOutboxMessage消息
       // Message to a remote RPC endpoint.
       postToOutbox(message.receiver, OneWayOutboxMessage(serialize(message)))
     }
@@ -201,12 +222,16 @@ private[netty] class NettyRpcEnv(
     val promise = Promise[Any]()
     val remoteAddr = message.receiver.address
 
+    // server返回失败时的回调函数
+    // 设置promise的结果为失败
     def onFailure(e: Throwable): Unit = {
       if (!promise.tryFailure(e)) {
         logWarning(s"Ignored failure: $e")
       }
     }
 
+    // server返回成功时的回调函数
+    // 设置promise的结果为成功，数据为server的返回值
     def onSuccess(reply: Any): Unit = reply match {
       case RpcFailure(e) => onFailure(e)
       case rpcReply =>
@@ -216,17 +241,22 @@ private[netty] class NettyRpcEnv(
     }
 
     try {
+      // 如果client和server是同一个进程内
       if (remoteAddr == address) {
         val p = Promise[Any]()
         p.future.onComplete {
           case Success(response) => onSuccess(response)
           case Failure(e) => onFailure(e)
         }(ThreadUtils.sameThread)
+        // 直接调用dispatcher转发消息
         dispatcher.postLocalMessage(message, p)
       } else {
+        // 生成RpcOutboxMessage消息
+        // 设置RpcOutboxMessage消息的回调函数
         val rpcMessage = RpcOutboxMessage(serialize(message),
           onFailure,
           (client, response) => onSuccess(deserialize[Any](client, response)))
+        // 通过Outbox发送消息
         postToOutbox(message.receiver, rpcMessage)
         promise.future.onFailure {
           case _: TimeoutException => rpcMessage.onTimeout()
@@ -234,11 +264,13 @@ private[netty] class NettyRpcEnv(
         }(ThreadUtils.sameThread)
       }
 
+      // 设置超时机制，如果超时还没接收响应，则调用onFailure函数
       val timeoutCancelable = timeoutScheduler.schedule(new Runnable {
         override def run(): Unit = {
           onFailure(new TimeoutException(s"Cannot receive any reply in ${timeout.duration}"))
         }
       }, timeout.duration.toNanos, TimeUnit.NANOSECONDS)
+      // 如果在超时前，完成响应，则取消这个请求的超时
       promise.future.onComplete { v =>
         timeoutCancelable.cancel(true)
       }(ThreadUtils.sameThread)
@@ -246,6 +278,7 @@ private[netty] class NettyRpcEnv(
       case NonFatal(e) =>
         onFailure(e)
     }
+    // 等待响应完成，等待时间不超过timeout
     promise.future.mapTo[T].recover(timeout.addMessageIfTimeout)(ThreadUtils.sameThread)
   }
 
@@ -440,9 +473,11 @@ private[rpc] class NettyRpcEnvFactory extends RpcEnvFactory with Logging {
     // KryoSerializer in future, we have to use ThreadLocal to store SerializerInstance
     val javaSerializerInstance =
       new JavaSerializer(sparkConf).newInstance().asInstanceOf[JavaSerializerInstance]
+    // 创建NettyRpcEnv，对内部TransportConf等对象进行实例化
     val nettyEnv =
       new NettyRpcEnv(sparkConf, javaSerializerInstance, config.host, config.securityManager)
     if (!config.clientMode) {
+      // 启动NettyRpcEnv
       val startNettyRpcEnv: Int => (NettyRpcEnv, Int) = { actualPort =>
         nettyEnv.startServer(actualPort)
         (nettyEnv, nettyEnv.address.port)

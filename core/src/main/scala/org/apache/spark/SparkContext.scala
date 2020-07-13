@@ -203,14 +203,14 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
   private var _executorMemory: Int = _
   private var _schedulerBackend: SchedulerBackend = _
   private var _taskScheduler: TaskScheduler = _
-  private var _heartbeatReceiver: RpcEndpointRef = _
+  private var _heartbeatReceiver: RpcEndpointRef = _ // 心跳接收器
   @volatile private var _dagScheduler: DAGScheduler = _
   private var _applicationId: String = _
   private var _applicationAttemptId: Option[String] = None
   private var _eventLogger: Option[EventLoggingListener] = None
   private var _executorAllocationManager: Option[ExecutorAllocationManager] = None
   private var _cleaner: Option[ContextCleaner] = None
-  private var _listenerBusStarted: Boolean = false
+  private var _listenerBusStarted: Boolean = false // 事件总线启动标识
   private var _jars: Seq[String] = _
   private var _files: Seq[String] = _
   private var _shutdownHookRef: AnyRef = _
@@ -482,6 +482,7 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
 
     // We need to register "HeartbeatReceiver" before "createTaskScheduler" because Executor will
     // retrieve "HeartbeatReceiver" in the constructor. (SPARK-6640)
+    // 创建心跳接收器
     _heartbeatReceiver = env.rpcEnv.setupEndpoint(
       HeartbeatReceiver.ENDPOINT_NAME, new HeartbeatReceiver(this))
 
@@ -521,6 +522,7 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
       }
 
     // Optionally scale number of executors dynamically based on workload. Exposed for testing.
+    // 判断动态分配属性是否开启，如果开启就创建ExecutorAllocationManager对象
     val dynamicAllocationEnabled = Utils.isDynamicAllocationEnabled(_conf)
     _executorAllocationManager =
       if (dynamicAllocationEnabled) {
@@ -538,6 +540,7 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
       }
     _cleaner.foreach(_.start())
 
+    // 安装和启动用户自定义的listener
     setupAndStartListenerBus()
     postEnvironmentUpdate()
     postApplicationStart()
@@ -2089,6 +2092,7 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
   private[spark] def newRddId(): Int = nextRddId.getAndIncrement()
 
   /**
+    * 注册spark.extraListeners属性指定的listener，然后启动事件总线。该方法应该在所有内部监听器注册到事件总线之后调用
    * Registers listeners specified in spark.extraListeners, then starts the listener bus.
    * This should be called after all internal listeners have been registered with the listener bus
    * (e.g. after the web UI and event logging listeners have been registered).
@@ -2096,8 +2100,10 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
   private def setupAndStartListenerBus(): Unit = {
     // Use reflection to instantiate listeners specified via `spark.extraListeners`
     try {
+      // 获取用户自定义的SparkListener
       val listenerClassNames: Seq[String] =
         conf.get("spark.extraListeners", "").split(',').map(_.trim).filter(_ != "")
+      // 反射生成每一个SparkListener类的实例，并将其添加到事件总线中
       for (className <- listenerClassNames) {
         // Use reflection to find the right constructor
         val constructors = {
@@ -2139,6 +2145,7 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
         }
     }
 
+    // 启动事件总线，并将事件总线启动标识设置为true
     listenerBus.start()
     _listenerBusStarted = true
   }

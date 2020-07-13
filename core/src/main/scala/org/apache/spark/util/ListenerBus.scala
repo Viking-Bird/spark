@@ -26,6 +26,7 @@ import scala.util.control.NonFatal
 import org.apache.spark.internal.Logging
 
 /**
+  * 接收事件并将事件提交到对应的事件监听器
  * An event bus which posts events to its listeners.
  */
 private[spark] trait ListenerBus[L <: AnyRef, E] extends Logging {
@@ -49,6 +50,8 @@ private[spark] trait ListenerBus[L <: AnyRef, E] extends Logging {
   }
 
   /**
+    * 一个事件对应多个监听器，该方法是遍历所有监听器，然后进行事件匹配，将事件信息发送给相应的监听器
+    * 事件继承自SparkListenerEvent特质，监听器继承自SparkListenerInterface特质
    * Post the event to all registered listeners. The `postToAll` caller should guarantee calling
    * `postToAll` in the same thread for all events.
    */

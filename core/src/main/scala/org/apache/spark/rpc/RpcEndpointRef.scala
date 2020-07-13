@@ -30,18 +30,27 @@ import org.apache.spark.util.RpcUtils
 private[spark] abstract class RpcEndpointRef(conf: SparkConf)
   extends Serializable with Logging {
 
+  // RPC最大重新连接次数，可以通过spark.rpc.numRetries配置，默认三次
   private[this] val maxRetries = RpcUtils.numRetries(conf)
+  // RPC每次重新连接的需要等待的时间间隔，以毫秒表示，可以通过spark.rpc.retry.wait配置，默认3秒
   private[this] val retryWaitMs = RpcUtils.retryWaitMs(conf)
+  // RPC的ask操作的默认超时时间，可以通过spark.rpc.askTimeout或者spark.network.timeout设置，默认120秒
   private[this] val defaultAskTimeout = RpcUtils.askRpcTimeout(conf)
 
   /**
+    * 返回当前RpcEndpointRef对应的RpcEndpoint的地址
    * return the address for the [[RpcEndpointRef]]
    */
   def address: RpcAddress
 
+  /**
+    * 返回当前RpcEndpointRef对应的RpcEndpoint的名称
+    * @return
+    */
   def name: String
 
   /**
+    * 发送单向异步消息，就是发送完后不管对方有没有收到，不会期望对方的回复
    * Sends a one-way asynchronous message. Fire-and-forget semantics.
    */
   def send(message: Any): Unit
@@ -55,6 +64,8 @@ private[spark] abstract class RpcEndpointRef(conf: SparkConf)
   def ask[T: ClassTag](message: Any, timeout: RpcTimeout): Future[T]
 
   /**
+    *
+    * 发送同步请求，该请求会被RpcEndpoint接收，并在指定的超时时间内等待返回结果
    * Send a message to the corresponding [[RpcEndpoint.receiveAndReply)]] and return a [[Future]] to
    * receive the reply within a default timeout.
    *
@@ -63,6 +74,7 @@ private[spark] abstract class RpcEndpointRef(conf: SparkConf)
   def ask[T: ClassTag](message: Any): Future[T] = ask(message, defaultAskTimeout)
 
   /**
+    * 发送同步请求，该请求会被RpcEndpoint接收，并在指定的超时时间内等待返回结果，发生SparkException异常时会触发重试，直到达到默认的重试次数为止
    * Send a message to the corresponding [[RpcEndpoint]] and get its result within a default
    * timeout, or throw a SparkException if this fails even after the default number of retries.
    * The default `timeout` will be used in every trial of calling `sendWithReply`. Because this

@@ -28,9 +28,11 @@ private[spark] trait SchedulingAlgorithm {
 
 private[spark] class FIFOSchedulingAlgorithm extends SchedulingAlgorithm {
   override def comparator(s1: Schedulable, s2: Schedulable): Boolean = {
+    // 先比较作业优先级：根据作业编号判断，作业编号越小优先级越高
     val priority1 = s1.priority
     val priority2 = s2.priority
     var res = math.signum(priority1 - priority2)
+    // 作业优先级相同，比较调度阶段优先级，调度阶段编号越小优先级越高
     if (res == 0) {
       val stageId1 = s1.stageId
       val stageId2 = s2.stageId

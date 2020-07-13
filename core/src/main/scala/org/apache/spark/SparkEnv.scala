@@ -41,6 +41,7 @@ import org.apache.spark.storage._
 import org.apache.spark.util.{RpcUtils, Utils}
 
 /**
+  * Spark运行时环境
  * :: DeveloperApi ::
  * Holds all the runtime environment objects for a running Spark instance (either master or worker),
  * including the serializer, RpcEnv, block manager, map output tracker, etc. Currently
@@ -54,12 +55,12 @@ import org.apache.spark.util.{RpcUtils, Utils}
 class SparkEnv (
     val executorId: String,
     private[spark] val rpcEnv: RpcEnv,
-    val serializer: Serializer,
+    val serializer: Serializer, // 序列化器
     val closureSerializer: Serializer,
-    val serializerManager: SerializerManager,
-    val mapOutputTracker: MapOutputTracker,
+    val serializerManager: SerializerManager, // 安全管理器
+    val mapOutputTracker: MapOutputTracker, // map任务输出追踪器
     val shuffleManager: ShuffleManager,
-    val broadcastManager: BroadcastManager,
+    val broadcastManager: BroadcastManager, // 广播管理器
     val blockManager: BlockManager,
     val securityManager: SecurityManager,
     val metricsSystem: MetricsSystem,
@@ -218,7 +219,7 @@ object SparkEnv extends Logging {
       assert(listenerBus != null, "Attempted to create driver SparkEnv with null listener bus!")
     }
 
-    val securityManager = new SecurityManager(conf)
+    val securityManager = new SecurityManager(conf) //创建安全管理器
 
     val systemName = if (isDriver) driverSystemName else executorSystemName
     val rpcEnv = RpcEnv.create(systemName, hostname, port, conf, securityManager,

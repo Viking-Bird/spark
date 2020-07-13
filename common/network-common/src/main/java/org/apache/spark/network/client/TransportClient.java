@@ -226,7 +226,10 @@ public class TransportClient implements Closeable {
       logger.trace("Sending RPC to {}", getRemoteAddress(channel));
     }
 
+    // 为此次请求分配requestId
     final long requestId = Math.abs(UUID.randomUUID().getLeastSignificantBits());
+    // 注意这里将请求信息添加到TransportResponseHandler里，
+    // TransportResponseHandler会在响应完成时，调用此次响应完成的回调函数callback
     handler.addRpcRequest(requestId, callback);
 
     channel.writeAndFlush(new RpcRequest(requestId, new NioManagedBuffer(message))).addListener(
@@ -240,6 +243,7 @@ public class TransportClient implements Closeable {
                 getRemoteAddress(channel), timeTaken);
             }
           } else {
+            // 处理请求失败的情况
             String errorMsg = String.format("Failed to send RPC %s to %s: %s", requestId,
               getRemoteAddress(channel), future.cause());
             logger.error(errorMsg, future.cause());

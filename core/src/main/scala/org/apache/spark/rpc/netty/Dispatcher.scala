@@ -31,6 +31,7 @@ import org.apache.spark.rpc._
 import org.apache.spark.util.ThreadUtils
 
 /**
+  * 负责将RPC消息路由到对应的RpcEndpoint
  * A message dispatcher, responsible for routing RPC messages to the appropriate endpoint(s).
  */
 private[netty] class Dispatcher(nettyEnv: NettyRpcEnv) extends Logging {
@@ -42,6 +43,8 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv) extends Logging {
     val inbox = new Inbox(ref, endpoint)
   }
 
+  // 当Dispatcher接收到消息后，会根据消息中的名称，发送到对应的服务。服务RpcEndpoint的信息都会保存在endpoints哈希表里。
+  // key值为RpcEndpoint的名称，value为EndpointData。EndpointData包含了服务对应的消息收件箱。
   private val endpoints: ConcurrentMap[String, EndpointData] =
     new ConcurrentHashMap[String, EndpointData]
   private val endpointRefs: ConcurrentMap[RpcEndpoint, RpcEndpointRef] =
@@ -57,6 +60,13 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv) extends Logging {
   @GuardedBy("this")
   private var stopped = false
 
+  /**
+    * 注册RPC服务端
+    *
+    * @param name
+    * @param endpoint
+    * @return
+    */
   def registerRpcEndpoint(name: String, endpoint: RpcEndpoint): NettyRpcEndpointRef = {
     val addr = RpcEndpointAddress(nettyEnv.address, name)
     val endpointRef = new NettyRpcEndpointRef(nettyEnv.conf, addr, nettyEnv)
@@ -64,6 +74,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv) extends Logging {
       if (stopped) {
         throw new IllegalStateException("RpcEnv has been stopped")
       }
+      // 如果服务端注册信息已存在，就抛出异常
       if (endpoints.putIfAbsent(name, new EndpointData(name, endpoint, endpointRef)) != null) {
         throw new IllegalArgumentException(s"There is already an RpcEndpoint called $name")
       }
@@ -117,7 +128,9 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv) extends Logging {
   def postRemoteMessage(message: RequestMessage, callback: RpcResponseCallback): Unit = {
     val rpcCallContext =
       new RemoteNettyRpcCallContext(nettyEnv, callback, message.senderAddress)
+    // 创建RpcMessage消息，调用postMessage方法发送
     val rpcMessage = RpcMessage(message.senderAddress, message.content, rpcCallContext)
+    // 请求消息message，包含了要请求服务的名称
     postMessage(message.receiver.name, rpcMessage, (e) => callback.onFailure(e))
   }
 
@@ -136,6 +149,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv) extends Logging {
   }
 
   /**
+    * 发送消息到收件箱
    * Posts a message to a specific endpoint.
    *
    * @param endpointName name of the endpoint.
@@ -147,12 +161,14 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv) extends Logging {
       message: InboxMessage,
       callbackIfStopped: (Exception) => Unit): Unit = {
     val error = synchronized {
+      // 获取对应的EndpointData
       val data = endpoints.get(endpointName)
       if (stopped) {
         Some(new RpcEnvStoppedException())
       } else if (data == null) {
         Some(new SparkException(s"Could not find $endpointName."))
       } else {
+        // 发送给对应的inbox
         data.inbox.post(message)
         receivers.offer(data)
         None
@@ -188,6 +204,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv) extends Logging {
   }
 
   /** Thread pool used for dispatching messages. */
+    // 创建处理消息的线程池
   private val threadpool: ThreadPoolExecutor = {
     val numThreads = nettyEnv.conf.getInt("spark.rpc.netty.dispatcher.numThreads",
       math.max(2, Runtime.getRuntime.availableProcessors()))
@@ -199,6 +216,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv) extends Logging {
   }
 
   /** Message loop used for dispatching messages. */
+  // 处理消息的线程，循环调用Inbox的process方法处理消息
   private class MessageLoop extends Runnable {
     override def run(): Unit = {
       try {

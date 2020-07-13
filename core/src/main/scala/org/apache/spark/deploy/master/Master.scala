@@ -698,9 +698,12 @@ private[deploy] class Master(
       return
     }
     // Drivers take strict precedence over executors
+    // 对Worker节点进行随机排序，能够使Driver更加均衡分布在集群中
     val shuffledAliveWorkers = Random.shuffle(workers.toSeq.filter(_.state == WorkerState.ALIVE))
     val numWorkersAlive = shuffledAliveWorkers.size
     var curPos = 0
+
+    // 按照顺序在集群中启动Driver，Driver尽可能在不同的Worker节点上运行
     for (driver <- waitingDrivers.toList) { // iterate over a copy of waitingDrivers
       // We assign workers to each waiting driver in a round-robin fashion. For each driver, we
       // start from the last worker that was assigned a driver, and continue onwards until we have
@@ -718,6 +721,7 @@ private[deploy] class Master(
         curPos = (curPos + 1) % numWorkersAlive
       }
     }
+    // 对等待的应用程序按照顺序分配运行资源
     startExecutorsOnWorkers()
   }
 

@@ -135,6 +135,7 @@ private[spark] trait RpcEndpoint {
 }
 
 /**
+  * 用于线程安全的场景，规定继承自它的类必须以串行的方式处理消息
  * A trait that requires RpcEnv thread-safely sending messages to it.
  *
  * Thread-safety means processing of one message happens before processing of the next message by

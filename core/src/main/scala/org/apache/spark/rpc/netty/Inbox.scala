@@ -52,6 +52,7 @@ private[netty] case class RemoteProcessConnectionError(cause: Throwable, remoteA
   extends InboxMessage
 
 /**
+  * 消息收件箱
  * An inbox that stores messages for an [[RpcEndpoint]] and posts messages to it thread-safely.
  */
 private[netty] class Inbox(
@@ -97,9 +98,11 @@ private[netty] class Inbox(
         return
       }
     }
+    // 根据消息类型匹配，执行对应的逻辑
     while (true) {
       safelyCall(endpoint) {
         message match {
+            // 需要返回响应的消息
           case RpcMessage(_sender, content, context) =>
             try {
               endpoint.receiveAndReply(context).applyOrElse[Any, Unit](content, { msg =>
@@ -112,12 +115,12 @@ private[netty] class Inbox(
                 // The endpoint's onError function will be called.
                 throw e
             }
-
+          // 不需要返回响应的消息
           case OneWayMessage(_sender, content) =>
             endpoint.receive.applyOrElse[Any, Unit](content, { msg =>
               throw new SparkException(s"Unsupported message $message from ${_sender}")
             })
-
+          // 启动消息，在Inbox初始化时会发送
           case OnStart =>
             endpoint.onStart()
             if (!endpoint.isInstanceOf[ThreadSafeRpcEndpoint]) {
@@ -127,7 +130,7 @@ private[netty] class Inbox(
                 }
               }
             }
-
+          // 退出消息
           case OnStop =>
             val activeThreads = inbox.synchronized { inbox.numActiveThreads }
             assert(activeThreads == 1,
@@ -147,14 +150,17 @@ private[netty] class Inbox(
         }
       }
 
+      // 对激活线程数量进行控制
       inbox.synchronized {
         // "enableConcurrent" will be set to false after `onStop` is called, so we should check it
         // every time.
+        // 如果不允许多个线程同时处理消息并且当前激活线程大于1个，则将当前线程退出，并对激活线程数量numActiveThreads减1
         if (!enableConcurrent && numActiveThreads != 1) {
           // If we are not the only one worker, exit
           numActiveThreads -= 1
           return
         }
+        // 如果没有消息要处理了，退出当前线程并对激活线程数量numActiveThreads减1
         message = messages.poll()
         if (message == null) {
           numActiveThreads -= 1

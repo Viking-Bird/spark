@@ -126,6 +126,10 @@ private[spark] class TaskSchedulerImpl(
     this.dagScheduler = dagScheduler
   }
 
+  /**
+    * 根据调度模式创建配置调度池
+    * @param backend
+    */
   def initialize(backend: SchedulerBackend) {
     this.backend = backend
     // temporarily set rootPool name to empty

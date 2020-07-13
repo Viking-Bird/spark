@@ -27,6 +27,7 @@ import org.apache.spark.internal.config._
 import org.apache.spark.util.Utils
 
 /**
+  * 采用异步的方式将SparkListenerEvent类型的事件投递给SparkListener类型的监听器
  * Asynchronously passes SparkListenerEvents to registered SparkListeners.
  *
  * Until `start()` is called, all posted events are only buffered. Only after this listener bus
