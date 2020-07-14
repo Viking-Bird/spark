@@ -32,8 +32,8 @@ private[spark] class ResultStage(
     rdd: RDD[_],
     val func: (TaskContext, Iterator[_]) => _,
     val partitions: Array[Int],
-    parents: List[Stage],
-    firstJobId: Int,
+    parents: List[Stage], // stage依赖列表
+    firstJobId: Int, // 第一个提交当前stage的job的id
     callSite: CallSite)
   extends Stage(id, rdd, partitions.length, parents, firstJobId, callSite) {
 
