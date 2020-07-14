@@ -68,6 +68,7 @@ private[scheduler] abstract class Stage(
   /** Set of jobs that this stage belongs to. */
   val jobIds = new HashSet[Int]
 
+  // 保存待处理分区的索引的集合
   val pendingPartitions = new HashSet[Int]
 
   /** The ID to use for the next new attempt for this stage. */
