@@ -18,6 +18,7 @@
 package org.apache.spark.scheduler
 
 /**
+  * 调度算法实现接口
  * An interface for sort algorithm
  * FIFO: FIFO algorithm between TaskSetManagers
  * FS: FS algorithm between Pools, and FIFO or FS within Pools
@@ -28,7 +29,7 @@ private[spark] trait SchedulingAlgorithm {
 
 private[spark] class FIFOSchedulingAlgorithm extends SchedulingAlgorithm {
   override def comparator(s1: Schedulable, s2: Schedulable): Boolean = {
-    // 先比较作业优先级：根据作业编号判断，作业编号越小优先级越高
+    // 先比较作业优先级：一般使用jobId作为优先级，根据jobId判断，jobId越小优先级越高
     val priority1 = s1.priority
     val priority2 = s2.priority
     var res = math.signum(priority1 - priority2)

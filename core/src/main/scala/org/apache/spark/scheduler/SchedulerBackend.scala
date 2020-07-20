@@ -18,6 +18,7 @@
 package org.apache.spark.scheduler
 
 /**
+  * 调度后端接口
  * A backend interface for scheduling systems that allows plugging in different ones under
  * TaskSchedulerImpl. We assume a Mesos-like model where the application gets resource offers as
  * machines become available and can launch tasks on them.
@@ -27,11 +28,26 @@ private[spark] trait SchedulerBackend {
 
   def start(): Unit
   def stop(): Unit
+
+  /**
+    * 给调度池中的所有Task分配资源
+    */
   def reviveOffers(): Unit
   def defaultParallelism(): Int
 
+  /**
+    * 杀死任务。可以通过设置interruptThread为true来中断任务执行线程
+    * @param taskId
+    * @param executorId
+    * @param interruptThread
+    */
   def killTask(taskId: Long, executorId: String, interruptThread: Boolean): Unit =
     throw new UnsupportedOperationException
+
+  /**
+    * SchedulerBackend是否准备就绪
+    * @return
+    */
   def isReady(): Boolean = true
 
   /**

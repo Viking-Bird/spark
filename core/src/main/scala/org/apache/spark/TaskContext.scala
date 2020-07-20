@@ -26,7 +26,9 @@ import org.apache.spark.memory.TaskMemoryManager
 import org.apache.spark.metrics.source.Source
 import org.apache.spark.util.{AccumulatorV2, TaskCompletionListener, TaskFailureListener}
 
-
+/**
+  * 维护Task执行时的上下文信息
+  */
 object TaskContext {
   /**
    * Return the currently active TaskContext. This can be called inside of

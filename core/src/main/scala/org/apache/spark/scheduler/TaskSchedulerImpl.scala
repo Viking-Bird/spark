@@ -54,7 +54,7 @@ import org.apache.spark.util.{AccumulatorV2, ThreadUtils, Utils}
  */
 private[spark] class TaskSchedulerImpl(
     val sc: SparkContext,
-    val maxTaskFailures: Int,
+    val maxTaskFailures: Int, // 任务最大的失败次数
     isLocal: Boolean = false)
   extends TaskScheduler with Logging
 {
@@ -62,12 +62,14 @@ private[spark] class TaskSchedulerImpl(
 
   val conf = sc.conf
 
+  // 任务推断执行的时间间隔
   // How often to check for speculative tasks
   val SPECULATION_INTERVAL_MS = conf.getTimeAsMs("spark.speculation.interval", "100ms")
 
   private val speculationScheduler =
     ThreadUtils.newDaemonSingleThreadScheduledExecutor("task-scheduler-speculation")
 
+  // 饥饿检查执行的时间间隔
   // Threshold above which we warn user initial TaskSet may be starved
   val STARVATION_TIMEOUT_MS = conf.getTimeAsMs("spark.starvation.timeout", "15s")
 
@@ -152,6 +154,7 @@ private[spark] class TaskSchedulerImpl(
   override def start() {
     backend.start()
 
+    // 设置检查可推断任务的定时器，每100毫秒运行一次
     if (!isLocal && conf.getBoolean("spark.speculation", false)) {
       logInfo("Starting speculative execution thread")
       speculationScheduler.scheduleAtFixedRate(new Runnable {
@@ -166,6 +169,10 @@ private[spark] class TaskSchedulerImpl(
     waitBackendReady()
   }
 
+  /**
+    * 提交任务
+    * @param taskSet
+    */
   override def submitTasks(taskSet: TaskSet) {
     val tasks = taskSet.tasks
     logInfo("Adding task set " + taskSet.id + " with " + tasks.length + " tasks")
@@ -183,12 +190,14 @@ private[spark] class TaskSchedulerImpl(
         throw new IllegalStateException(s"more than one active taskSet for stage $stage:" +
           s" ${stageTaskSets.toSeq.map{_._2.taskSet.id}.mkString(",")}")
       }
-      // 将该任务集的管理器加入到系统调度池中，由系统统一调配，该调度器属于应用级别
+      // 将该任务集的管理器加入到系统调度池中，由系统统一调配，该调度器属于Application级别
       schedulableBuilder.addTaskSetManager(manager, manager.taskSet.properties)
 
+      // 设置检查TaskSchedulerImpl的饥饿状况的定时器
       if (!isLocal && !hasReceivedTask) {
         starvationTimer.scheduleAtFixedRate(new TimerTask() {
           override def run() {
+            // 当TaskSchedulerImpl已经运行Task后，取消此定时器
             if (!hasLaunchedTask) {
               logWarning("Initial job has not accepted any resources; " +
                 "check your cluster UI to ensure that workers are registered " +
@@ -199,7 +208,7 @@ private[spark] class TaskSchedulerImpl(
           }
         }, STARVATION_TIMEOUT_MS, STARVATION_TIMEOUT_MS)
       }
-      hasReceivedTask = true
+      hasReceivedTask = true // 表示TaskSchedulerImpl已经收到Task
     }
     // 调用调度器后台进程的SparkDeploySchedulerBacked的reviveOffers方法分配资源并运行
     backend.reviveOffers()

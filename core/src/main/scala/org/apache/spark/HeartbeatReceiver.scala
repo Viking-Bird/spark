@@ -69,19 +69,23 @@ private[spark] class HeartbeatReceiver(sc: SparkContext, clock: Clock)
   private[spark] var scheduler: TaskScheduler = null
 
   // executor ID -> timestamp of when the last heartbeat from this executor was received
+  // executorID->最后一次收到Executor的心跳
   private val executorLastSeen = new mutable.HashMap[String, Long]
 
   // "spark.network.timeout" uses "seconds", while `spark.storage.blockManagerSlaveTimeoutMs` uses
   // "milliseconds"
   private val slaveTimeoutMs =
     sc.conf.getTimeAsMs("spark.storage.blockManagerSlaveTimeoutMs", "120s")
+  // executor超时时间
   private val executorTimeoutMs =
     sc.conf.getTimeAsSeconds("spark.network.timeout", s"${slaveTimeoutMs}ms") * 1000
 
   // "spark.network.timeoutInterval" uses "seconds", while
   // "spark.storage.blockManagerTimeoutIntervalMs" uses "milliseconds"
+  // 超时间隔
   private val timeoutIntervalMs =
     sc.conf.getTimeAsMs("spark.storage.blockManagerTimeoutIntervalMs", "60s")
+  // 检查超时的间隔
   private val checkTimeoutIntervalMs =
     sc.conf.getTimeAsSeconds("spark.network.timeoutInterval", s"${timeoutIntervalMs}ms") * 1000
 
@@ -114,7 +118,7 @@ private[spark] class HeartbeatReceiver(sc: SparkContext, clock: Clock)
     case TaskSchedulerIsSet =>
       scheduler = sc.taskScheduler
       context.reply(true)
-    case ExpireDeadHosts =>
+    case ExpireDeadHosts => // 超时Executor处理
       expireDeadHosts()
       context.reply(true)
 
@@ -189,6 +193,9 @@ private[spark] class HeartbeatReceiver(sc: SparkContext, clock: Clock)
     removeExecutor(executorRemoved.executorId)
   }
 
+  /**
+    * 处理超时的executor
+    */
   private def expireDeadHosts(): Unit = {
     logTrace("Checking for hosts with no recent heartbeats in HeartbeatReceiver.")
     val now = clock.getTimeMillis()
@@ -197,16 +204,16 @@ private[spark] class HeartbeatReceiver(sc: SparkContext, clock: Clock)
         logWarning(s"Removing executor $executorId with no recent heartbeats: " +
           s"${now - lastSeenMs} ms exceeds timeout $executorTimeoutMs ms")
         scheduler.executorLost(executorId, SlaveLost("Executor heartbeat " +
-          s"timed out after ${now - lastSeenMs} ms"))
+          s"timed out after ${now - lastSeenMs} ms")) // 移除丢失的Executor
           // Asynchronously kill the executor to avoid blocking the current thread
         killExecutorThread.submit(new Runnable {
           override def run(): Unit = Utils.tryLogNonFatalError {
             // Note: we want to get an executor back after expiring this one,
             // so do not simply call `sc.killExecutor` here (SPARK-8119)
-            sc.killAndReplaceExecutor(executorId)
+            sc.killAndReplaceExecutor(executorId) // 杀死Executor
           }
         })
-        executorLastSeen.remove(executorId)
+        executorLastSeen.remove(executorId) // 移除对Executor的超时检查
       }
     }
   }

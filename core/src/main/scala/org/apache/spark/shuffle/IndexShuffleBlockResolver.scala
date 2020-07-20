@@ -30,6 +30,7 @@ import org.apache.spark.storage._
 import org.apache.spark.util.Utils
 
 /**
+  * 创建和维护Shuffle Block与物理文件位置之间的映射关系
  * Create and maintain the shuffle blocks' mapping between logic block and physical file location.
  * Data of shuffle blocks from the same map task are stored in a single consolidated data file.
  * The offsets of the data blocks in the data file are stored in a separate index file.
@@ -50,15 +51,28 @@ private[spark] class IndexShuffleBlockResolver(
 
   private val transportConf = SparkTransportConf.fromSparkConf(conf, "shuffle")
 
+  /**
+    * 获取shuffle数据文件
+    * @param shuffleId
+    * @param mapId
+    * @return
+    */
   def getDataFile(shuffleId: Int, mapId: Int): File = {
     blockManager.diskBlockManager.getFile(ShuffleDataBlockId(shuffleId, mapId, NOOP_REDUCE_ID))
   }
 
+  /**
+    * 获取shuffle索引文件
+    * @param shuffleId
+    * @param mapId
+    * @return
+    */
   private def getIndexFile(shuffleId: Int, mapId: Int): File = {
     blockManager.diskBlockManager.getFile(ShuffleIndexBlockId(shuffleId, mapId, NOOP_REDUCE_ID))
   }
 
   /**
+    * 删除Shuffle过程中包含指定map任务输出数据的Shuffle数据文件和索引文件
    * Remove data file and index file that contain the output data from one map.
    * */
   def removeDataByMap(shuffleId: Int, mapId: Int): Unit = {
@@ -123,6 +137,7 @@ private[spark] class IndexShuffleBlockResolver(
   }
 
   /**
+    * 将Block的偏移量写入索引文件，并在最后增加一个表示输出文件末尾的偏移量
    * Write an index file with the offsets of each block, plus a final offset at the end for the
    * end of the output file. This will be used by getBlockData to figure out where each block
    * begins and ends.
