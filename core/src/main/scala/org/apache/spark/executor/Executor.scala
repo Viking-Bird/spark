@@ -510,12 +510,16 @@ private[spark] class Executor(
     }
   }
 
-  /** Reports heartbeat and metrics for active tasks to the driver. */
+  /**
+    * 报告心跳
+    * Reports heartbeat and metrics for active tasks to the driver.
+    */
   private def reportHeartBeat(): Unit = {
     // list of (task id, accumUpdates) to send back to the driver
     val accumUpdates = new ArrayBuffer[(Long, Seq[AccumulatorV2[_, _]])]()
     val curGCTime = computeTotalGcTime()
 
+    // 遍历runningTasks中正在运行的Task，将每个Task的度量信息更新到数组缓冲accumUpdates中
     for (taskRunner <- runningTasks.values().asScala) {
       if (taskRunner.task != null) {
         taskRunner.task.metrics.mergeShuffleReadMetrics()
@@ -524,6 +528,7 @@ private[spark] class Executor(
       }
     }
 
+    // 创建心跳消息
     val message = Heartbeat(executorId, accumUpdates.toArray, env.blockManager.blockManagerId)
     try {
       val response = heartbeatReceiverRef.askWithRetry[HeartbeatResponse](

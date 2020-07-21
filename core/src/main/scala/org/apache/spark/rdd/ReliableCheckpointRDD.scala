@@ -51,6 +51,9 @@ private[spark] class ReliableCheckpointRDD[T: ClassTag](
    */
   override val getCheckpointFile: Option[String] = Some(checkpointPath)
 
+  /**
+    * 从检查点文件获取分区数组
+    */
   override val partitioner: Option[Partitioner] = {
     _partitioner.orElse {
       ReliableCheckpointRDD.readCheckpointedPartitionerFile(context, checkpointPath)
@@ -80,6 +83,7 @@ private[spark] class ReliableCheckpointRDD[T: ClassTag](
   }
 
   /**
+    * 从检查点文件获取偏好位置
    * Return the locations of the checkpoint file associated with the given partition.
    */
   protected override def getPreferredLocations(split: Partition): Seq[String] = {
@@ -90,6 +94,7 @@ private[spark] class ReliableCheckpointRDD[T: ClassTag](
   }
 
   /**
+    * 从检查点文件中获取检查点数据
    * Read the content of the checkpoint file associated with the given partition.
    */
   override def compute(split: Partition, context: TaskContext): Iterator[T] = {
@@ -113,6 +118,7 @@ private[spark] object ReliableCheckpointRDD extends Logging {
   }
 
   /**
+    * 将RDD数据写到检查点目录
    * Write RDD to checkpoint files and return a ReliableCheckpointRDD representing the RDD.
    */
   def writeRDDToCheckpointDirectory[T: ClassTag](
@@ -151,6 +157,7 @@ private[spark] object ReliableCheckpointRDD extends Logging {
   }
 
   /**
+    * 将分区数据写到checkpoint文件中
    * Write a RDD partition's data to a checkpoint file.
    */
   def writePartitionToCheckpointFile[T: ClassTag](
@@ -203,6 +210,7 @@ private[spark] object ReliableCheckpointRDD extends Logging {
   }
 
   /**
+    * 将分区计算器的数据写到检查点目录下
    * Write a partitioner to the given RDD checkpoint directory. This is done on a best-effort
    * basis; any exception while writing the partitioner is caught, logged and ignored.
    */
@@ -264,6 +272,7 @@ private[spark] object ReliableCheckpointRDD extends Logging {
   }
 
   /**
+    * 从检查点目录下读取RDD数据
    * Read the content of the specified checkpoint file.
    */
   def readCheckpointFile[T](

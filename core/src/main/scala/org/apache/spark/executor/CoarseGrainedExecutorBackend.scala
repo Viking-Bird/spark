@@ -56,6 +56,7 @@ private[spark] class CoarseGrainedExecutorBackend(
 
   override def onStart() {
     logInfo("Connecting to driver: " + driverUrl)
+    // 向DriverEndpoint发送RegisterExecutor消息注册Executor
     rpcEnv.asyncSetupEndpointRefByURI(driverUrl).flatMap { ref =>
       // This is a very fast action so we can use "ThreadUtils.sameThread"
       driver = Some(ref)
@@ -75,6 +76,10 @@ private[spark] class CoarseGrainedExecutorBackend(
       .map(e => (e._1.substring(prefix.length).toLowerCase, e._2))
   }
 
+  /**
+    * 对Driver的响应进行处理
+    * @return
+    */
   override def receive: PartialFunction[Any, Unit] = {
     case RegisteredExecutor =>
       logInfo("Successfully registered with driver")
@@ -176,7 +181,7 @@ private[spark] object CoarseGrainedExecutorBackend extends Logging {
       Utils.checkHost(hostname)
 
       // Bootstrap to fetch the driver's Spark properties.
-      val executorConf = new SparkConf
+      val executorConf = new SparkConf // 创建Executor自己的SparkConf
       val port = executorConf.getInt("spark.executor.port", 0)
       val fetcher = RpcEnv.create(
         "driverPropsFetcher",
@@ -206,11 +211,13 @@ private[spark] object CoarseGrainedExecutorBackend extends Logging {
         SparkHadoopUtil.get.startExecutorDelegationTokenRenewer(driverConf)
       }
 
-      val env = SparkEnv.createExecutorEnv(
+      val env = SparkEnv.createExecutorEnv( // 创建Executor自身的SparkEnv
         driverConf, executorId, hostname, port, cores, isLocal = false)
 
+      // 创建并注册CoarseGrainedExecutorBackend实例
       env.rpcEnv.setupEndpoint("Executor", new CoarseGrainedExecutorBackend(
         env.rpcEnv, driverUrl, executorId, hostname, cores, userClassPath, env))
+      // 创建并注册WorkerWatcher实例
       workerUrl.foreach { url =>
         env.rpcEnv.setupEndpoint("WorkerWatcher", new WorkerWatcher(env.rpcEnv, url))
       }
